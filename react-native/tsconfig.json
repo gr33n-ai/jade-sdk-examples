@@ -1,0 +1,18 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "paths": {
+      "@gr33n-ai/jade-sdk-rn-client": [
+        "../src/index.ts"
+      ],
+      "@gr33n-ai/jade-sdk-rn-client/*": [
+        "../src/*"
+      ]
+    }
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx"
+  ]
+}
