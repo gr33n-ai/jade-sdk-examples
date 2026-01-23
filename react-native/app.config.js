@@ -4,12 +4,13 @@ export default {
     slug: "jade-sdk-rn-playground",
     version: "1.0.0",
     orientation: "portrait",
-    userInterfaceStyle: "dark",
+    userInterfaceStyle: "automatic",
     newArchEnabled: true,
     splash: {
       backgroundColor: "#1a1a1a"
     },
     ios: {
+      bundleIdentifier: "com.gr33n.jade-sdk-playground",
       supportsTablet: true,
       infoPlist: {
         NSAppTransportSecurity: {

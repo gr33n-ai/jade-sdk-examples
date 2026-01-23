@@ -1,10 +1,8 @@
 export type RootStackParamList = {
   Config: undefined;
+  Main: { sessionId?: string };
 };
 
-export type TabParamList = {
-  Sessions: undefined;
-  Chat: { sessionId?: string };
-  Skills: undefined;
-  More: undefined;
+export type MainScreenParams = {
+  sessionId?: string;
 };

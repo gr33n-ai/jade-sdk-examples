@@ -9,6 +9,9 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import type { ToolUIProps } from './registry';
+import { CompactGraphView } from '../workflow-graph';
+import { useThemeColors } from '../../utils/theme';
+import SpinningLoader from '../SpinningLoader';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const INPUT_THUMB_SIZE = 40;
@@ -27,15 +30,34 @@ interface InputData {
   numImages?: number;
 }
 
-export function GenerativeImageToolUI({ entry }: ToolUIProps) {
+export function GenerativeImageToolUI({ entry, onShowFullGraph }: ToolUIProps) {
+  const colors = useThemeColors();
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [isPromptExpanded, setIsPromptExpanded] = useState(false);
 
   const mediaInfo = entry.parsedResult?.data?.mediaInfo as MediaResult | undefined;
   const inputData = entry.parsedInput?.data as InputData | undefined;
 
-  if (!mediaInfo?.urls || mediaInfo.urls.length === 0) {
-    return null;
+  const isLoading = !mediaInfo?.urls || mediaInfo.urls.length === 0;
+
+  if (isLoading) {
+    return (
+      <View style={styles.container}>
+        {inputData?.prompt && (
+          <View style={[styles.promptContainer, { borderLeftColor: colors.success }]}>
+            <Text style={[styles.promptText, { color: colors.fenceText }]} numberOfLines={4}>
+              {inputData.prompt}
+            </Text>
+          </View>
+        )}
+        <View style={styles.loadingContainer}>
+          <SpinningLoader size={16} color={colors.accent} />
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+            Generating image...
+          </Text>
+        </View>
+      </View>
+    );
   }
 
   const urls = mediaInfo.urls;
@@ -45,8 +67,8 @@ export function GenerativeImageToolUI({ entry }: ToolUIProps) {
   return (
     <View style={styles.container}>
       {inputData?.prompt && (
-        <View style={styles.promptContainer}>
-          <Text style={styles.promptText} numberOfLines={4}>
+        <View style={[styles.promptContainer, { borderLeftColor: colors.success }]}>
+          <Text style={[styles.promptText, { color: colors.fenceText }]} numberOfLines={4}>
             {inputData.prompt}
           </Text>
         </View>
@@ -54,9 +76,9 @@ export function GenerativeImageToolUI({ entry }: ToolUIProps) {
 
       <View style={styles.metaRow}>
         {inputData?.model && (
-          <View style={styles.modelBadge}>
-            <Text style={styles.sparkle}>✦</Text>
-            <Text style={styles.modelText}>{inputData.model}</Text>
+          <View style={[styles.modelBadge, { backgroundColor: colors.accentBackground }]}>
+            <Text style={[styles.sparkle, { color: colors.success }]}>✦</Text>
+            <Text style={[styles.modelText, { color: colors.success }]}>{inputData.model}</Text>
           </View>
         )}
         {inputImageUrls.length > 0 && (
@@ -91,6 +113,9 @@ export function GenerativeImageToolUI({ entry }: ToolUIProps) {
           </TouchableOpacity>
         ))}
       </View>
+
+      {/* Compact Graph View */}
+      <CompactGraphView entry={entry} onPress={onShowFullGraph} />
 
       <Modal
         visible={selectedIndex !== null}
@@ -170,15 +195,22 @@ const styles = StyleSheet.create({
   container: {
     marginTop: 12,
   },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+  },
+  loadingText: {
+    fontSize: 14,
+  },
   promptContainer: {
     borderLeftWidth: 3,
-    borderLeftColor: '#4ade80',
     paddingLeft: 12,
     paddingVertical: 4,
     marginBottom: 10,
   },
   promptText: {
-    color: '#e0e0e0',
     fontSize: 14,
     lineHeight: 20,
   },
@@ -191,18 +223,15 @@ const styles = StyleSheet.create({
   modelBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(74, 222, 128, 0.15)',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 6,
     gap: 6,
   },
   sparkle: {
-    color: '#4ade80',
     fontSize: 12,
   },
   modelText: {
-    color: '#4ade80',
     fontSize: 13,
     fontWeight: '500',
   },

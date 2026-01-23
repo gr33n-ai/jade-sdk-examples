@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useLayoutEffect } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,9 +10,11 @@ import {
   SectionList,
   KeyboardAvoidingView,
   Platform,
+  Modal,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useJadeClient, type SkillMetadata } from '@gr33n-ai/jade-sdk-rn-client';
+import { useThemeColors } from '../utils/theme';
 
 interface SkillSection {
   title: string;
@@ -20,8 +22,14 @@ interface SkillSection {
   isOrg?: boolean;
 }
 
-export default function SkillsScreen() {
-  const navigation = useNavigation();
+interface SkillsScreenProps {
+  visible: boolean;
+  onClose: () => void;
+}
+
+export default function SkillsScreen({ visible, onClose }: SkillsScreenProps) {
+  const colors = useThemeColors();
+  const insets = useSafeAreaInsets();
   const client = useJadeClient();
   const [personalSkills, setPersonalSkills] = useState<SkillMetadata[]>([]);
   const [orgSkills, setOrgSkills] = useState<SkillMetadata[]>([]);
@@ -31,28 +39,6 @@ export default function SkillsScreen() {
   const [newName, setNewName] = useState('');
   const [newContent, setNewContent] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      headerRight: () => (
-        <View style={styles.headerButtons}>
-          <TouchableOpacity
-            onPress={loadSkills}
-            style={styles.headerButton}
-            disabled={isLoading}
-          >
-            <Text style={styles.headerButtonText}>{isLoading ? '...' : '↻'}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setShowCreate(!showCreate)}
-            style={styles.headerButton}
-          >
-            <Text style={styles.headerButtonText}>{showCreate ? '✕' : '+'}</Text>
-          </TouchableOpacity>
-        </View>
-      ),
-    });
-  }, [navigation, isLoading, showCreate]);
 
   const loadSkills = useCallback(async () => {
     try {
@@ -71,8 +57,10 @@ export default function SkillsScreen() {
   }, [client]);
 
   useEffect(() => {
-    loadSkills();
-  }, [loadSkills]);
+    if (visible) {
+      loadSkills();
+    }
+  }, [visible, loadSkills]);
 
   const handleDelete = async (name: string) => {
     Alert.alert(
@@ -133,13 +121,13 @@ export default function SkillsScreen() {
   const renderItem = ({ item, section }: { item: SkillMetadata; section: SkillSection }) => (
     <View>
       <TouchableOpacity
-        style={styles.skillItem}
+        style={[styles.skillItem, { backgroundColor: colors.backgroundSecondary }]}
         onPress={() => toggleExpand(item.name)}
         activeOpacity={0.7}
       >
         <View style={styles.skillContent}>
-          <Text style={styles.skillName}>{item.name}</Text>
-          <Text style={styles.skillMeta}>
+          <Text style={[styles.skillName, { color: colors.text }]}>{item.name}</Text>
+          <Text style={[styles.skillMeta, { color: colors.textSecondary }]}>
             {item.checksum?.slice(0, 8) || 'No checksum'}
           </Text>
         </View>
@@ -151,13 +139,13 @@ export default function SkillsScreen() {
             <Text style={styles.actionIcon}>🗑️</Text>
           </TouchableOpacity>
         )}
-        <Text style={styles.expandHint}>
+        <Text style={[styles.expandHint, { color: colors.textMuted }]}>
           {expandedSkill === item.name ? '▼' : '▶'}
         </Text>
       </TouchableOpacity>
       {expandedSkill === item.name && (
-        <View style={styles.expandedContent}>
-          <Text style={styles.expandedText}>
+        <View style={[styles.expandedContent, { backgroundColor: colors.expandedBackground }]}>
+          <Text style={[styles.expandedText, { color: colors.textSecondary }]}>
             Skill content preview not available
           </Text>
         </View>
@@ -167,7 +155,7 @@ export default function SkillsScreen() {
 
   const renderSectionHeader = ({ section }: { section: SkillSection }) => (
     <View style={styles.sectionHeader}>
-      <Text style={styles.sectionTitle}>{section.title}</Text>
+      <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>{section.title}</Text>
     </View>
   );
 
@@ -177,26 +165,26 @@ export default function SkillsScreen() {
     return (
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.createForm}
+        style={[styles.createForm, { backgroundColor: colors.backgroundSecondary, borderBottomColor: colors.border }]}
       >
-        <Text style={styles.createTitle}>Create New Skill</Text>
-        <Text style={styles.inputLabel}>Name</Text>
+        <Text style={[styles.createTitle, { color: colors.text }]}>Create New Skill</Text>
+        <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Name</Text>
         <TextInput
-          style={styles.input}
+          style={[styles.input, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
           value={newName}
           onChangeText={setNewName}
           placeholder="my-skill"
-          placeholderTextColor="#666"
+          placeholderTextColor={colors.textMuted}
           autoCapitalize="none"
           autoCorrect={false}
         />
-        <Text style={styles.inputLabel}>Content</Text>
+        <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Content</Text>
         <TextInput
-          style={[styles.input, styles.contentInput]}
+          style={[styles.input, styles.contentInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
           value={newContent}
           onChangeText={setNewContent}
           placeholder="# My Skill&#10;&#10;Description of what this skill does..."
-          placeholderTextColor="#666"
+          placeholderTextColor={colors.textMuted}
           multiline
           numberOfLines={6}
           textAlignVertical="top"
@@ -204,12 +192,13 @@ export default function SkillsScreen() {
         <TouchableOpacity
           style={[
             styles.saveButton,
-            (!newName.trim() || !newContent.trim() || isSaving) && styles.saveButtonDisabled,
+            { backgroundColor: colors.accent },
+            (!newName.trim() || !newContent.trim() || isSaving) && { backgroundColor: colors.backgroundTertiary },
           ]}
           onPress={handleCreate}
           disabled={!newName.trim() || !newContent.trim() || isSaving}
         >
-          <Text style={styles.saveButtonText}>
+          <Text style={[styles.saveButtonText, { color: colors.userBubbleText }]}>
             {isSaving ? 'Saving...' : 'Save Skill'}
           </Text>
         </TouchableOpacity>
@@ -218,95 +207,141 @@ export default function SkillsScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      {renderCreateForm()}
-      <SectionList
-        sections={sections}
-        renderItem={renderItem}
-        renderSectionHeader={renderSectionHeader}
-        keyExtractor={(item) => item.name}
-        contentContainerStyle={styles.listContent}
-        refreshControl={
-          <RefreshControl
-            refreshing={isLoading}
-            onRefresh={loadSkills}
-            tintColor="#4a9eff"
-          />
-        }
-        ListEmptyComponent={
-          !isLoading ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyText}>No skills yet</Text>
-              <Text style={styles.emptyHint}>Tap + to create a skill</Text>
-            </View>
-          ) : null
-        }
-        stickySectionHeadersEnabled={false}
-      />
-    </View>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onClose}
+    >
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={[styles.header, { backgroundColor: colors.backgroundSecondary }]}>
+          <View style={styles.headerLeft}>
+            <TouchableOpacity
+              onPress={onClose}
+              style={[styles.circleButton, { backgroundColor: colors.accentBackground, borderColor: colors.accent, borderWidth: 1 }]}
+            >
+              <Text style={[styles.buttonIcon, { color: colors.accent }]}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Skills</Text>
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              onPress={loadSkills}
+              style={[styles.circleButton, { backgroundColor: colors.accentBackground, borderColor: colors.accent, borderWidth: 1 }]}
+              disabled={isLoading}
+            >
+              <Text style={[styles.buttonIcon, { color: colors.accent }]}>{isLoading ? '...' : '↻'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setShowCreate(!showCreate)}
+              style={[styles.circleButton, { backgroundColor: colors.accentBackground, borderColor: colors.accent, borderWidth: 1 }]}
+            >
+              <Text style={[styles.buttonIcon, { color: colors.accent }]}>{showCreate ? '✕' : '+'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {renderCreateForm()}
+        <SectionList
+          sections={sections}
+          renderItem={renderItem}
+          renderSectionHeader={renderSectionHeader}
+          keyExtractor={(item) => item.name}
+          contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={isLoading}
+              onRefresh={loadSkills}
+              tintColor={colors.accent}
+            />
+          }
+          ListEmptyComponent={
+            !isLoading ? (
+              <View style={styles.emptyState}>
+                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No skills yet</Text>
+                <Text style={[styles.emptyHint, { color: colors.textMuted }]}>Tap + to create a skill</Text>
+              </View>
+            ) : null
+          }
+          stickySectionHeadersEnabled={false}
+        />
+      </View>
+    </Modal>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a1a1a',
   },
-  headerButtons: {
+  header: {
     flexDirection: 'row',
-    gap: 8,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 20,
+    paddingBottom: 12,
+    position: 'relative',
   },
-  headerButton: {
-    paddingHorizontal: 8,
+  headerLeft: {
+    zIndex: 1,
   },
-  headerButtonText: {
-    color: '#4a9eff',
-    fontSize: 20,
+  headerTitle: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 28,
+    textAlign: 'center',
+    fontSize: 17,
     fontWeight: '600',
   },
+  circleButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  buttonIcon: {
+    fontSize: 18,
+    fontWeight: '500',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    gap: 8,
+    zIndex: 1,
+  },
   createForm: {
-    backgroundColor: '#252525',
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#333',
   },
   createTitle: {
-    color: '#fff',
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 12,
   },
   inputLabel: {
-    color: '#888',
     fontSize: 12,
     marginBottom: 4,
     textTransform: 'uppercase',
   },
   input: {
-    backgroundColor: '#1a1a1a',
     borderRadius: 8,
     padding: 12,
     fontSize: 15,
-    color: '#fff',
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#333',
   },
   contentInput: {
     minHeight: 120,
     paddingTop: 12,
   },
   saveButton: {
-    backgroundColor: '#4a9eff',
     borderRadius: 8,
     padding: 14,
     alignItems: 'center',
   },
-  saveButtonDisabled: {
-    backgroundColor: '#333',
-  },
   saveButtonText: {
-    color: '#fff',
     fontSize: 15,
     fontWeight: '600',
   },
@@ -319,7 +354,6 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   sectionTitle: {
-    color: '#888',
     fontSize: 12,
     fontWeight: '600',
     textTransform: 'uppercase',
@@ -327,7 +361,6 @@ const styles = StyleSheet.create({
   skillItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#2a2a2a',
     borderRadius: 8,
     padding: 12,
     marginBottom: 8,
@@ -336,13 +369,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   skillName: {
-    color: '#fff',
     fontSize: 15,
     fontWeight: '500',
     marginBottom: 4,
   },
   skillMeta: {
-    color: '#888',
     fontSize: 12,
     fontFamily: 'monospace',
   },
@@ -354,18 +385,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   expandHint: {
-    color: '#666',
     fontSize: 12,
   },
   expandedContent: {
-    backgroundColor: '#222',
     borderRadius: 4,
     padding: 12,
     marginBottom: 8,
     marginTop: -4,
   },
   expandedText: {
-    color: '#888',
     fontSize: 12,
     fontStyle: 'italic',
   },
@@ -376,12 +404,10 @@ const styles = StyleSheet.create({
     paddingVertical: 100,
   },
   emptyText: {
-    color: '#888',
     fontSize: 16,
     marginBottom: 4,
   },
   emptyHint: {
-    color: '#555',
     fontSize: 14,
   },
 });

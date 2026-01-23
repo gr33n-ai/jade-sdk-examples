@@ -1,75 +1,125 @@
-import React, { useState, useRef, useEffect, useCallback, useLayoutEffect } from 'react';
-import { useFocusEffect } from '@react-navigation/native';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
-  TextInput,
-  TouchableOpacity,
   FlatList,
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
+  Keyboard,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import Markdown from 'react-native-markdown-display';
-import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { useJadeSession, parseSuggestions, type ProcessedEntry } from '@gr33n-ai/jade-sdk-rn-client';
-import type { TabParamList } from '../types/navigation';
 import MessageBubble from './MessageBubble';
-import MediaDisplay from './MediaDisplay';
-import ToolHistory from './ToolHistory';
 import SpinningLoader from './SpinningLoader';
+import InputBar from './InputBar';
+import { FullGraphView, type ToolCallNodeURI } from './workflow-graph';
 import { getHumanReadableToolName } from '../utils/toolNames';
+import { useThemeColors } from '../utils/theme';
+import { getToolUI } from './tool-ui';
 
-const markdownStyles = {
-  body: { color: '#fff', fontSize: 15, lineHeight: 22 },
-  heading1: { color: '#fff', fontSize: 24, fontWeight: 'bold' as const, marginVertical: 8 },
-  heading2: { color: '#fff', fontSize: 20, fontWeight: 'bold' as const, marginVertical: 6 },
-  heading3: { color: '#fff', fontSize: 17, fontWeight: 'bold' as const, marginVertical: 4 },
-  paragraph: { marginVertical: 4 },
-  code_inline: {
-    backgroundColor: '#333',
-    color: '#4ade80',
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    paddingHorizontal: 4,
-    borderRadius: 4,
-  },
-  code_block: {
-    backgroundColor: '#1a1a1a',
-    padding: 12,
-    borderRadius: 8,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-  },
-  fence: {
-    backgroundColor: '#1a1a1a',
-    padding: 12,
-    borderRadius: 8,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    color: '#e0e0e0',
-  },
-  link: { color: '#4a9eff' },
-  list_item: { marginVertical: 2 },
-  bullet_list: { marginVertical: 4 },
-  ordered_list: { marginVertical: 4 },
-  blockquote: {
-    borderLeftWidth: 3,
-    borderLeftColor: '#4a9eff',
-    paddingLeft: 12,
-    opacity: 0.8,
-  },
-  strong: { fontWeight: 'bold' as const },
-  em: { fontStyle: 'italic' as const },
-};
+interface ChatScreenProps {
+  sessionId?: string;
+  onShowFullGraph: (toolUseId?: string) => void;
+  showFullGraph: boolean;
+  onCloseFullGraph: () => void;
+  focusToolCallId?: ToolCallNodeURI;
+}
 
-type Props = BottomTabScreenProps<TabParamList, 'Chat'>;
-
-export default function ChatScreen({ navigation, route }: Props) {
+export default function ChatScreen({
+  sessionId,
+  onShowFullGraph,
+  showFullGraph,
+  onCloseFullGraph,
+  focusToolCallId,
+}: ChatScreenProps) {
+  const colors = useThemeColors();
+  const insets = useSafeAreaInsets();
   const [input, setInput] = useState('');
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const flatListRef = useRef<FlatList>(null);
-  const sessionId = route.params?.sessionId;
+  const contentHeightRef = useRef(0);
+  const shouldAutoScrollRef = useRef(true);
+  const forceScrollRef = useRef(false);
+  const scrollOffsetRef = useRef(0);
+  const layoutHeightRef = useRef(0);
+  const wasStreamingRef = useRef(false);
+
+  const inputBarHeight = 60 + insets.bottom;
+
+  const scrollToBottom = (animated: boolean) => {
+    if (!flatListRef.current || layoutHeightRef.current === 0 || contentHeightRef.current === 0) return;
+    const maxOffset = contentHeightRef.current - layoutHeightRef.current;
+    if (maxOffset > 0) {
+      flatListRef.current.scrollToOffset({
+        offset: maxOffset + inputBarHeight,
+        animated
+      });
+    }
+  };
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', () => {
+      setTimeout(() => scrollToBottom(true), 100);
+    });
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [inputBarHeight]);
+
+  const getDistanceFromBottom = () => {
+    const maxScroll = contentHeightRef.current - layoutHeightRef.current;
+    return Math.max(0, maxScroll - scrollOffsetRef.current);
+  };
+
+  const markdownStyles = useMemo(() => ({
+    body: { color: colors.text, fontSize: 15, lineHeight: 22 },
+    heading1: { color: colors.text, fontSize: 24, fontWeight: 'bold' as const, marginVertical: 8 },
+    heading2: { color: colors.text, fontSize: 20, fontWeight: 'bold' as const, marginVertical: 6 },
+    heading3: { color: colors.text, fontSize: 17, fontWeight: 'bold' as const, marginVertical: 4 },
+    paragraph: { marginVertical: 4 },
+    code_inline: {
+      backgroundColor: colors.codeBackground,
+      color: colors.accent,
+      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+      paddingHorizontal: 4,
+      borderRadius: 4,
+    },
+    code_block: {
+      backgroundColor: colors.background,
+      padding: 12,
+      borderRadius: 8,
+      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    },
+    fence: {
+      backgroundColor: colors.background,
+      padding: 12,
+      borderRadius: 8,
+      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+      color: colors.fenceText,
+    },
+    link: { color: colors.accent },
+    list_item: { marginVertical: 2 },
+    bullet_list: { marginVertical: 4 },
+    ordered_list: { marginVertical: 4 },
+    blockquote: {
+      borderLeftWidth: 3,
+      borderLeftColor: colors.accent,
+      paddingLeft: 12,
+      opacity: 0.8,
+    },
+    strong: { fontWeight: 'bold' as const },
+    em: { fontStyle: 'italic' as const },
+  }), [colors]);
 
   const {
     processedConversation,
-    media,
     isStreaming,
     streamingText,
     streamingToolCall,
@@ -83,53 +133,38 @@ export default function ChatScreen({ navigation, route }: Props) {
     clear,
   } = useJadeSession();
 
-  useFocusEffect(
-    useCallback(() => {
-      const currentSessionId = route.params?.sessionId;
-      if (currentSessionId) {
-        loadSession(currentSessionId)
-          .then((entries) => {
-            setConversation(entries, currentSessionId);
-          })
-          .catch((err) => {
-            console.error('Failed to load session:', err);
-          });
-      }
-    }, [route.params?.sessionId, loadSession, setConversation])
-  );
-
-  const handleNewThread = useCallback(() => {
-    clear();
-    navigation.setParams({ sessionId: undefined });
-  }, [clear, navigation]);
-
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      headerRight: () => (
-        <TouchableOpacity onPress={handleNewThread} style={styles.headerButton}>
-          <Text style={styles.headerButtonText}>New</Text>
-        </TouchableOpacity>
-      ),
-    });
-  }, [navigation, handleNewThread]);
-
-  const handleScrollToEntry = useCallback((index: number) => {
-    flatListRef.current?.scrollToIndex({ index, animated: true });
-  }, []);
+  useEffect(() => {
+    if (sessionId) {
+      loadSession(sessionId)
+        .then((entries) => {
+          forceScrollRef.current = true;
+          shouldAutoScrollRef.current = true;
+          setConversation(entries, sessionId);
+          setTimeout(() => scrollToBottom(false), 150);
+        })
+        .catch((err) => {
+          console.error('Failed to load session:', err);
+        });
+    } else {
+      clear();
+    }
+  }, [sessionId, loadSession, setConversation, clear]);
 
   useEffect(() => {
-    if (flatListRef.current && processedConversation.length > 0) {
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
+    const currentlyStreaming = isStreaming || !!streamingText;
+    if (currentlyStreaming && !wasStreamingRef.current) {
+      shouldAutoScrollRef.current = true;
     }
-  }, [processedConversation.length, streamingText]);
+    wasStreamingRef.current = currentlyStreaming;
+  }, [isStreaming, streamingText]);
 
   const handleSend = async () => {
     if (!input.trim() || isStreaming) return;
 
     const message = input.trim();
     setInput('');
+    forceScrollRef.current = true;
+    shouldAutoScrollRef.current = true;
 
     try {
       await sendMessage(message);
@@ -140,6 +175,8 @@ export default function ChatScreen({ navigation, route }: Props) {
 
   const handleSuggestionTap = async (suggestion: string) => {
     if (isStreaming) return;
+    forceScrollRef.current = true;
+    shouldAutoScrollRef.current = true;
     try {
       await sendMessage(suggestion);
     } catch (err) {
@@ -147,8 +184,16 @@ export default function ChatScreen({ navigation, route }: Props) {
     }
   };
 
+  const handleAttachment = (uri: string, type: 'image' | 'document') => {
+    console.log('Attachment selected:', { uri, type });
+  };
+
   const renderItem = ({ item }: { item: ProcessedEntry }) => (
-    <MessageBubble entry={item} onSuggestionTap={handleSuggestionTap} />
+    <MessageBubble
+      entry={item}
+      onSuggestionTap={handleSuggestionTap}
+      onShowFullGraph={() => onShowFullGraph(item.entry?.tool_use_id)}
+    />
   );
 
   const renderStreamingContent = () => {
@@ -181,7 +226,7 @@ export default function ChatScreen({ navigation, route }: Props) {
             </Markdown>
           )}
           <View style={styles.loadingRow}>
-            <SpinningLoader size={14} color="#4a9eff" />
+            <SpinningLoader size={14} color={colors.accent} />
           </View>
         </View>
       );
@@ -190,11 +235,9 @@ export default function ChatScreen({ navigation, route }: Props) {
     if (streamingToolCall) {
       const displayName = getHumanReadableToolName(streamingToolCall.tool_name);
       return (
-        <View style={styles.streamingContainer}>
-          <View style={styles.loadingRow}>
-            <SpinningLoader size={14} color="#4a9eff" />
-            <Text style={styles.loadingText}>{displayName}</Text>
-          </View>
+        <View style={[styles.toolLoadingBubble, { backgroundColor: colors.toolBubble }]}>
+          <Text style={[styles.toolLoadingName, { color: colors.accent }]}>{displayName}</Text>
+          <SpinningLoader size={12} color={colors.accent} />
         </View>
       );
     }
@@ -203,23 +246,25 @@ export default function ChatScreen({ navigation, route }: Props) {
       return (
         <View style={styles.streamingContainer}>
           <View style={styles.loadingRow}>
-            <SpinningLoader size={14} color="#4a9eff" />
-            <Text style={styles.loadingText}>Thinking...</Text>
+            <SpinningLoader size={14} color={colors.accent} />
+            <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Thinking...</Text>
           </View>
         </View>
       );
     }
 
     if (isExecutingTool) {
+      if (executingToolName && getToolUI(executingToolName)) {
+        return null;
+      }
+
       const toolLabel = executingToolName
         ? getHumanReadableToolName(executingToolName)
         : 'Running tool...';
       return (
-        <View style={styles.streamingContainer}>
-          <View style={styles.loadingRow}>
-            <SpinningLoader size={14} color="#4a9eff" />
-            <Text style={styles.loadingText}>{toolLabel}</Text>
-          </View>
+        <View style={[styles.toolLoadingBubble, { backgroundColor: colors.toolBubble }]}>
+          <Text style={[styles.toolLoadingName, { color: colors.accent }]}>{toolLabel}</Text>
+          <SpinningLoader size={12} color={colors.accent} />
         </View>
       );
     }
@@ -228,8 +273,8 @@ export default function ChatScreen({ navigation, route }: Props) {
       return (
         <View style={styles.streamingContainer}>
           <View style={styles.loadingRow}>
-            <SpinningLoader size={14} color="#4a9eff" />
-            <Text style={styles.loadingText}>Processing...</Text>
+            <SpinningLoader size={14} color={colors.accent} />
+            <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Processing...</Text>
           </View>
         </View>
       );
@@ -240,79 +285,108 @@ export default function ChatScreen({ navigation, route }: Props) {
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      style={[styles.container, { backgroundColor: colors.background }]}
+      behavior="height"
+      keyboardVerticalOffset={-insets.bottom}
     >
-      <ToolHistory
-        entries={processedConversation}
-        onScrollToEntry={handleScrollToEntry}
-      />
-
-      {media.length > 0 && (
-        <View style={styles.mediaBar}>
-          <MediaDisplay media={media} />
-        </View>
-      )}
-
       <FlatList
         ref={flatListRef}
         data={processedConversation}
         renderItem={renderItem}
         keyExtractor={(_, index) => index.toString()}
-        contentContainerStyle={styles.messageList}
+        contentContainerStyle={[styles.messageList, { paddingTop: insets.top + 56, paddingBottom: inputBarHeight + 16 }]}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>No messages yet</Text>
-            <Text style={styles.emptyHint}>Send a message to start</Text>
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No messages yet</Text>
+            <Text style={[styles.emptyHint, { color: colors.textMuted }]}>Send a message to start</Text>
           </View>
         }
         ListFooterComponent={renderStreamingContent}
+        style={styles.flatList}
+        onScroll={(event) => {
+          scrollOffsetRef.current = event.nativeEvent.contentOffset.y;
+          const isCurrentlyStreaming = isStreaming || !!streamingText;
+          if (isCurrentlyStreaming && getDistanceFromBottom() > 250) {
+            shouldAutoScrollRef.current = false;
+          }
+        }}
+        scrollEventThrottle={16}
+        onLayout={(event) => {
+          layoutHeightRef.current = event.nativeEvent.layout.height;
+        }}
+        onContentSizeChange={(_, contentHeight) => {
+          const prevHeight = contentHeightRef.current;
+          contentHeightRef.current = contentHeight;
+
+          if (forceScrollRef.current) {
+            forceScrollRef.current = false;
+            scrollToBottom(true);
+            return;
+          }
+
+          const isCurrentlyStreaming = isStreaming || !!streamingText;
+          if (isCurrentlyStreaming && shouldAutoScrollRef.current && contentHeight > prevHeight) {
+            scrollToBottom(false);
+          }
+        }}
       />
 
-      <View style={styles.inputContainer}>
-        <TextInput
-          style={styles.input}
+      {/* Top fade gradient */}
+      <LinearGradient
+        colors={[colors.background, `${colors.background}00`]}
+        style={[styles.topGradient, { height: insets.top + 56 + 40 }]}
+        pointerEvents="none"
+      />
+
+      {/* Bottom fade gradient */}
+      <LinearGradient
+        colors={[`${colors.background}00`, colors.background]}
+        style={[styles.bottomGradient, { height: inputBarHeight + 40 }]}
+        pointerEvents="none"
+      />
+
+      <View style={styles.inputBarWrapper}>
+        <InputBar
           value={input}
           onChangeText={setInput}
-          placeholder="Type a message..."
-          placeholderTextColor="#666"
-          multiline
-          maxLength={10000}
-          editable={!isStreaming}
+          onSend={handleSend}
+          onCancel={cancel}
+          isStreaming={isStreaming}
+          onAttachment={handleAttachment}
         />
-        {isStreaming ? (
-          <TouchableOpacity style={styles.cancelButton} onPress={cancel}>
-            <Text style={styles.cancelButtonText}>Cancel</Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            style={[styles.sendButton, !input.trim() && styles.sendButtonDisabled]}
-            onPress={handleSend}
-            disabled={!input.trim()}
-          >
-            <Text style={styles.sendButtonText}>Send</Text>
-          </TouchableOpacity>
-        )}
       </View>
+
+      <FullGraphView
+        visible={showFullGraph}
+        onClose={onCloseFullGraph}
+        entries={processedConversation}
+        sessionId={sessionId || 'default'}
+        focusToolCallId={focusToolCallId}
+      />
     </KeyboardAvoidingView>
   );
+}
+
+export function useChatSession() {
+  return useJadeSession();
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a1a1a',
   },
-  mediaBar: {
-    backgroundColor: '#2a2a2a',
-    padding: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#333',
+  flatList: {
+    flex: 1,
   },
   messageList: {
-    padding: 16,
+    paddingHorizontal: 16,
     flexGrow: 1,
+  },
+  inputBarWrapper: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
   },
   emptyState: {
     flex: 1,
@@ -321,19 +395,11 @@ const styles = StyleSheet.create({
     paddingVertical: 100,
   },
   emptyText: {
-    color: '#888',
     fontSize: 16,
     marginBottom: 4,
   },
   emptyHint: {
-    color: '#555',
     fontSize: 14,
-  },
-  messageBubble: {
-    maxWidth: '85%',
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 8,
   },
   streamingContainer: {
     alignSelf: 'flex-start',
@@ -348,63 +414,33 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   loadingText: {
-    color: '#888',
     fontSize: 15,
   },
-  inputContainer: {
-    flexDirection: 'row',
+  toolLoadingBubble: {
+    maxWidth: '85%',
     padding: 12,
-    backgroundColor: '#2a2a2a',
-    borderTopWidth: 1,
-    borderTopColor: '#333',
-    alignItems: 'flex-end',
+    borderRadius: 12,
+    marginBottom: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  input: {
-    flex: 1,
-    backgroundColor: '#1a1a1a',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    fontSize: 16,
-    color: '#fff',
-    maxHeight: 100,
-    marginRight: 8,
-  },
-  sendButton: {
-    backgroundColor: '#4a9eff',
-    borderRadius: 20,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-  },
-  sendButtonDisabled: {
-    backgroundColor: '#333',
-  },
-  sendButtonText: {
-    color: '#fff',
-    fontSize: 16,
+  toolLoadingName: {
+    fontSize: 13,
     fontWeight: '600',
   },
-  cancelButton: {
-    backgroundColor: '#ff6b6b',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+  topGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
   },
-  cancelButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  headerButton: {
-    marginRight: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: '#4a9eff',
-    borderRadius: 6,
-  },
-  headerButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
+  bottomGradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
   },
 });

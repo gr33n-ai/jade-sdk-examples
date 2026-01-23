@@ -1,7 +1,10 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { StatusBar } from 'expo-status-bar';
+import { useColorScheme } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import {
@@ -11,7 +14,7 @@ import {
 } from '@gr33n-ai/jade-sdk-rn-client';
 
 import ConfigScreen from './components/ConfigScreen';
-import TabNavigator from './components/TabNavigator';
+import MainScreen from './components/MainScreen';
 import type { RootStackParamList } from './types/navigation';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -33,6 +36,7 @@ interface Config {
 }
 
 export default function App() {
+  const colorScheme = useColorScheme();
   const [config, setConfig] = useState<Config | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -92,28 +96,39 @@ export default function App() {
   }
 
   return (
-    <>
-      <StatusBar style="light" />
-      <NavigationContainer>
-        {!config ? (
-          <Stack.Navigator screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="Config">
-              {(props) => (
-                <ConfigScreen
-                  {...props}
-                  defaultEndpoint={getDefaultEndpoint()}
-                  defaultToken={getDefaultToken()}
-                  onConnect={handleConnect}
-                />
-              )}
-            </Stack.Screen>
-          </Stack.Navigator>
-        ) : (
-          <JadeProvider config={providerConfig} storage={storage}>
-            <TabNavigator onDisconnect={handleDisconnect} />
-          </JadeProvider>
-        )}
-      </NavigationContainer>
-    </>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+        <NavigationContainer>
+          {!config ? (
+            <Stack.Navigator screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="Config">
+                {(props) => (
+                  <ConfigScreen
+                    {...props}
+                    defaultEndpoint={getDefaultEndpoint()}
+                    defaultToken={getDefaultToken()}
+                    onConnect={handleConnect}
+                  />
+                )}
+              </Stack.Screen>
+            </Stack.Navigator>
+          ) : (
+            <JadeProvider config={providerConfig} storage={storage}>
+              <Stack.Navigator screenOptions={{ headerShown: false }}>
+                <Stack.Screen name="Main">
+                  {(props) => (
+                    <MainScreen
+                      {...props}
+                      onDisconnect={handleDisconnect}
+                    />
+                  )}
+                </Stack.Screen>
+              </Stack.Navigator>
+            </JadeProvider>
+          )}
+        </NavigationContainer>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

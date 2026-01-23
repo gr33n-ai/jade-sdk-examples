@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types/navigation';
+import { useThemeColors } from '../utils/theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Config'> & {
   defaultEndpoint: string;
@@ -19,6 +20,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Config'> & {
 };
 
 export default function ConfigScreen({ defaultEndpoint, defaultToken, onConnect }: Props) {
+  const colors = useThemeColors();
   const [endpoint, setEndpoint] = useState(defaultEndpoint);
   const [token, setToken] = useState(defaultToken);
   const [orgId, setOrgId] = useState('');
@@ -62,66 +64,66 @@ export default function ConfigScreen({ defaultEndpoint, defaultToken, onConnect 
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.content}
       >
         <View style={styles.header}>
-          <Text style={styles.title}>Jade SDK</Text>
-          <Text style={styles.subtitle}>React Native Playground</Text>
+          <Text style={[styles.title, { color: colors.text }]}>Jade SDK</Text>
+          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>React Native Playground</Text>
         </View>
 
         <View style={styles.form}>
-          <Text style={styles.label}>Server Endpoint</Text>
+          <Text style={[styles.label, { color: colors.textSecondary }]}>Server Endpoint</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { backgroundColor: colors.backgroundSecondary, color: colors.text, borderColor: colors.border }]}
             value={endpoint}
             onChangeText={setEndpoint}
             placeholder="https://api.gr33n.ai"
-            placeholderTextColor="#666"
+            placeholderTextColor={colors.textMuted}
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="url"
           />
 
-          <Text style={styles.label}>Auth Token</Text>
+          <Text style={[styles.label, { color: colors.textSecondary }]}>Auth Token</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { backgroundColor: colors.backgroundSecondary, color: colors.text, borderColor: colors.border }]}
             value={token}
             onChangeText={setToken}
             placeholder="Bearer token"
-            placeholderTextColor="#666"
+            placeholderTextColor={colors.textMuted}
             autoCapitalize="none"
             autoCorrect={false}
             secureTextEntry
           />
 
-          <Text style={styles.label}>Org ID (optional)</Text>
+          <Text style={[styles.label, { color: colors.textSecondary }]}>Org ID (optional)</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { backgroundColor: colors.backgroundSecondary, color: colors.text, borderColor: colors.border }]}
             value={orgId}
             onChangeText={setOrgId}
             placeholder="Organization ID for org skills"
-            placeholderTextColor="#666"
+            placeholderTextColor={colors.textMuted}
             autoCapitalize="none"
             autoCorrect={false}
           />
 
-          {error && <Text style={styles.error}>{error}</Text>}
+          {error && <Text style={[styles.error, { color: colors.error }]}>{error}</Text>}
 
           <TouchableOpacity
-            style={[styles.button, isConnecting && styles.buttonDisabled]}
+            style={[styles.button, { backgroundColor: colors.accent }, isConnecting && { backgroundColor: colors.backgroundTertiary }]}
             onPress={handleConnect}
             disabled={isConnecting}
           >
-            <Text style={styles.buttonText}>
+            <Text style={[styles.buttonText, { color: colors.userBubbleText }]}>
               {isConnecting ? 'Connecting...' : 'Connect'}
             </Text>
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.hint}>
+        <Text style={[styles.hint, { color: colors.textMuted }]}>
           Start the jade-server on your machine and connect to begin.
         </Text>
       </KeyboardAvoidingView>
@@ -132,7 +134,6 @@ export default function ConfigScreen({ defaultEndpoint, defaultToken, onConnect 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a1a1a',
   },
   content: {
     flex: 1,
@@ -146,53 +147,40 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: '#fff',
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: '#888',
   },
   form: {
     marginBottom: 24,
   },
   label: {
     fontSize: 14,
-    color: '#888',
     marginBottom: 8,
   },
   input: {
-    backgroundColor: '#2a2a2a',
     borderRadius: 8,
     padding: 16,
     fontSize: 16,
-    color: '#fff',
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#333',
   },
   error: {
-    color: '#ff6b6b',
     fontSize: 14,
     marginBottom: 16,
   },
   button: {
-    backgroundColor: '#4a9eff',
     borderRadius: 8,
     padding: 16,
     alignItems: 'center',
     marginTop: 8,
   },
-  buttonDisabled: {
-    backgroundColor: '#333',
-  },
   buttonText: {
-    color: '#fff',
     fontSize: 16,
     fontWeight: '600',
   },
   hint: {
-    color: '#666',
     fontSize: 14,
     textAlign: 'center',
   },
