@@ -36,6 +36,13 @@ export const colors = {
     glassBackground: 'rgba(238, 238, 238, 0.95)',
     glassBorder: 'rgba(0, 0, 0, 0.1)',
     overlay: 'rgba(0, 0, 0, 0.3)',
+    // Card stack
+    cardBackground: '#FFFFFF',
+    cardText: '#313131',
+    cardTextSecondary: 'rgba(49, 49, 49, 0.5)',
+    suggestionPill: '#F0F0F0',
+    suggestionPillText: '#313131',
+    templateOverlay: 'rgba(0, 0, 0, 0.35)',
   },
   dark: {
     background: '#1a1a1a',
@@ -72,6 +79,13 @@ export const colors = {
     glassBackground: 'rgba(30, 30, 30, 0.95)',
     glassBorder: 'rgba(255, 255, 255, 0.1)',
     overlay: 'rgba(0, 0, 0, 0.5)',
+    // Card stack
+    cardBackground: '#2a2a2a',
+    cardText: '#E0E0E0',
+    cardTextSecondary: 'rgba(224, 224, 224, 0.5)',
+    suggestionPill: '#333333',
+    suggestionPillText: '#E0E0E0',
+    templateOverlay: 'rgba(0, 0, 0, 0.45)',
   },
 };
 

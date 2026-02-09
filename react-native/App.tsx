@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { useColorScheme } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -15,6 +15,7 @@ import {
 
 import ConfigScreen from './components/ConfigScreen';
 import MainScreen from './components/MainScreen';
+import TemplateDetailScreen from './components/templates/TemplateDetailScreen';
 import type { RootStackParamList } from './types/navigation';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -35,10 +36,16 @@ interface Config {
   orgId: string;
 }
 
+interface PendingPrompt {
+  prompt: string;
+  skills: string[];
+}
+
 export default function App() {
   const colorScheme = useColorScheme();
   const [config, setConfig] = useState<Config | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const pendingPromptRef = useRef<PendingPrompt | null>(null);
 
   useEffect(() => {
     const loadConfig = async () => {
@@ -121,8 +128,27 @@ export default function App() {
                     <MainScreen
                       {...props}
                       onDisconnect={handleDisconnect}
+                      pendingPromptRef={pendingPromptRef}
                     />
                   )}
+                </Stack.Screen>
+                <Stack.Screen
+                  name="TemplateDetail"
+                  options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+                >
+                  {(props) => {
+                    const template = props.route.params.template;
+                    return (
+                      <TemplateDetailScreen
+                        template={template}
+                        onBack={() => props.navigation.goBack()}
+                        onSubmit={(prompt, skills) => {
+                          pendingPromptRef.current = { prompt, skills };
+                          props.navigation.goBack();
+                        }}
+                      />
+                    );
+                  }}
                 </Stack.Screen>
               </Stack.Navigator>
             </JadeProvider>

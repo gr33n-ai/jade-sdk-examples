@@ -1,67 +1,144 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
-  Text,
-  TouchableOpacity,
   StyleSheet,
-  Animated,
-  Pressable,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useJadeSession } from '@gr33n-ai/jade-sdk-rn-client';
+import { useJadeSession, useJadeClient, type SessionMetadata, type ConversationEntry } from '@gr33n-ai/jade-sdk-rn-client';
 import type { RootStackParamList } from '../types/navigation';
-import ChatScreen from './ChatScreen';
-import Sidebar, { SIDEBAR_WIDTH } from './Sidebar';
-import SkillsScreen from './SkillsScreen';
+import type { TemplatePresentation } from '../types/TemplatePresentation';
+import HomeScreen from './home/HomeScreen';
+import CardStackChat from './chat/CardStackChat';
 import { useThemeColors } from '../utils/theme';
+import { useSessionMedia } from '../hooks/useSessionMedia';
 import type { ToolCallNodeURI } from './workflow-graph';
+
+interface PendingPrompt {
+  prompt: string;
+  skills: string[];
+}
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Main'> & {
   onDisconnect: () => void;
+  pendingPromptRef?: React.MutableRefObject<PendingPrompt | null>;
 };
 
-export default function MainScreen({ navigation, route, onDisconnect }: Props) {
-  const colors = useThemeColors();
-  const insets = useSafeAreaInsets();
-  const { clear } = useJadeSession();
+type ChatMode =
+  | { type: 'home' }
+  | { type: 'chat'; sessionId?: string; initialPrompt?: string; initialSkills?: string[] };
 
-  const [sidebarVisible, setSidebarVisible] = useState(false);
-  const [skillsModalVisible, setSkillsModalVisible] = useState(false);
-  const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(route.params?.sessionId);
+export default function MainScreen({ navigation, route, onDisconnect, pendingPromptRef }: Props) {
+  const colors = useThemeColors();
+  const client = useJadeClient();
+  const session = useJadeSession();
+
+  const [mode, setMode] = useState<ChatMode>(
+    route.params?.sessionId
+      ? { type: 'chat', sessionId: route.params.sessionId }
+      : { type: 'home' },
+  );
   const [showFullGraph, setShowFullGraph] = useState(false);
   const [focusToolCallId, setFocusToolCallId] = useState<ToolCallNodeURI | undefined>();
 
-  const sidebarOffset = useRef(new Animated.Value(0)).current;
-  const overlayOpacity = useRef(new Animated.Value(0)).current;
+  // Lifted sessions state
+  const [sessions, setSessions] = useState<SessionMetadata[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+
+  // Conversation cache keyed by sessionId
+  const conversationCacheRef = useRef<Map<string, ConversationEntry[]>>(new Map());
+  const hasLoadedSessionsRef = useRef(false);
+
+  const sessionMediaMap = useSessionMedia(sessions, conversationCacheRef);
+
+  const loadSessions = useCallback(async () => {
+    console.log('[MainScreen] loadSessions called');
+    try {
+      if (!hasLoadedSessionsRef.current) {
+        setSessionsLoading(true);
+      }
+      const result = await client.listSessions();
+      console.log('[MainScreen] listSessions response', result.sessions.map(s => ({ id: s.session_id, name: s.name })));
+      setSessions(result.sessions);
+      hasLoadedSessionsRef.current = true;
+    } catch (err) {
+      console.error('Failed to load sessions:', err);
+    } finally {
+      setSessionsLoading(false);
+    }
+  }, [client]);
 
   useEffect(() => {
-    Animated.parallel([
-      Animated.timing(sidebarOffset, {
-        toValue: sidebarVisible ? SIDEBAR_WIDTH : 0,
-        duration: 250,
-        useNativeDriver: true,
-      }),
-      Animated.timing(overlayOpacity, {
-        toValue: sidebarVisible ? 1 : 0,
-        duration: 250,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [sidebarVisible, sidebarOffset, overlayOpacity]);
-
-  const handleMenuPress = () => {
-    setSidebarVisible(!sidebarVisible);
-  };
-
-  const handleSelectSession = useCallback((sessionId: string) => {
-    setCurrentSessionId(sessionId);
+    loadSessions();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleNewSession = useCallback(() => {
-    clear();
-    setCurrentSessionId(undefined);
-  }, [clear]);
+  const updateConversationCache = useCallback((sessionId: string, entries: ConversationEntry[]) => {
+    conversationCacheRef.current.set(sessionId, entries);
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      if (pendingPromptRef?.current) {
+        const { prompt, skills } = pendingPromptRef.current;
+        pendingPromptRef.current = null;
+        session.clear();
+        setMode({ type: 'chat', initialPrompt: prompt, initialSkills: skills });
+      }
+    });
+    return unsubscribe;
+  }, [navigation, pendingPromptRef, session.clear]);
+
+  const handleTemplatePress = useCallback((template: TemplatePresentation) => {
+    navigation.navigate('TemplateDetail', { template });
+  }, [navigation]);
+
+  const handleSessionPress = useCallback((sessionId: string) => {
+    session.clear();
+    setMode({ type: 'chat', sessionId });
+  }, [session.clear]);
+
+  const handleNewChat = useCallback((prompt: string) => {
+    session.clear();
+    setMode({ type: 'chat', initialPrompt: prompt });
+  }, [session.clear]);
+
+  const handleRenameSession = useCallback(async (sessionId: string, newName: string) => {
+    console.log('[MainScreen] handleRenameSession called', { sessionId, newName });
+    try {
+      const result = await client.updateSession(sessionId, { name: newName });
+      console.log('[MainScreen] updateSession response', result);
+      setSessions(prev => {
+        const next = prev.map(s =>
+          s.session_id === sessionId ? { ...s, name: newName } : s
+        );
+        console.log('[MainScreen] sessions after rename', next.map(s => ({ id: s.session_id, name: s.name })));
+        return next;
+      });
+    } catch (err) {
+      console.error('[MainScreen] updateSession failed', err);
+    }
+  }, [client]);
+
+  const handleDeleteSession = useCallback(async (sessionId: string) => {
+    console.log('[MainScreen] handleDeleteSession called', { sessionId });
+    try {
+      const result = await client.deleteSession(sessionId);
+      console.log('[MainScreen] deleteSession response', result);
+      setSessions(prev => {
+        const next = prev.filter(s => s.session_id !== sessionId);
+        console.log('[MainScreen] sessions after delete', next.map(s => ({ id: s.session_id, name: s.name })));
+        return next;
+      });
+    } catch (err) {
+      console.error('[MainScreen] deleteSession failed', err);
+    }
+  }, [client]);
+
+  const handleBack = useCallback(() => {
+    session.clear();
+    setMode({ type: 'home' });
+    loadSessions();
+  }, [session.clear, loadSessions]);
 
   const handleShowFullGraph = useCallback((toolUseId?: string) => {
     if (toolUseId) {
@@ -72,71 +149,38 @@ export default function MainScreen({ navigation, route, onDisconnect }: Props) {
     setShowFullGraph(true);
   }, []);
 
-  const handleCloseFullGraph = useCallback(() => {
-    setShowFullGraph(false);
-  }, []);
-
-  const handleCloseSidebar = useCallback(() => {
-    setSidebarVisible(false);
-  }, []);
+  const handleCloseFullGraph = useCallback(() => setShowFullGraph(false), []);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Animated.View
-        style={[
-          styles.mainContent,
-          { backgroundColor: colors.background, transform: [{ translateX: sidebarOffset }] },
-        ]}
-      >
-        <View style={[styles.floatingHeader, { paddingTop: insets.top + 8 }]}>
-          <View style={styles.headerLeft}>
-            <TouchableOpacity
-              style={[styles.headerButton, { backgroundColor: colors.accentBackground, borderColor: colors.accent, borderWidth: 1 }]}
-              onPress={handleMenuPress}
-            >
-              <Text style={[styles.menuIcon, { color: colors.accent }]}>☰</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.headerRight} />
-        </View>
-
-        <View style={{ flex: 1 }}>
-          <ChatScreen
-            sessionId={currentSessionId}
-            onShowFullGraph={handleShowFullGraph}
-            showFullGraph={showFullGraph}
-            onCloseFullGraph={handleCloseFullGraph}
-            focusToolCallId={focusToolCallId}
-          />
-        </View>
-      </Animated.View>
-
-      <Animated.View
-        style={[
-          StyleSheet.absoluteFill,
-          styles.overlay,
-          { opacity: overlayOpacity },
-        ]}
-        pointerEvents={sidebarVisible ? 'auto' : 'none'}
-      >
-        <Pressable style={StyleSheet.absoluteFill} onPress={handleCloseSidebar} />
-      </Animated.View>
-
-      <Sidebar
-        visible={sidebarVisible}
-        onClose={handleCloseSidebar}
-        onSelectSession={handleSelectSession}
-        onNewSession={handleNewSession}
-        onManageSkills={() => setSkillsModalVisible(true)}
-        onDisconnect={onDisconnect}
-        currentSessionId={currentSessionId}
-      />
-
-      <SkillsScreen
-        visible={skillsModalVisible}
-        onClose={() => setSkillsModalVisible(false)}
-      />
+      {mode.type === 'home' ? (
+        <HomeScreen
+          sessions={sessions}
+          sessionsLoading={sessionsLoading}
+          sessionMediaMap={sessionMediaMap}
+          onRefreshSessions={loadSessions}
+          onTemplatePress={handleTemplatePress}
+          onSessionPress={handleSessionPress}
+          onNewChat={handleNewChat}
+          onRenameSession={handleRenameSession}
+          onDeleteSession={handleDeleteSession}
+        />
+      ) : (
+        <CardStackChat
+          key={mode.sessionId || 'new-chat'}
+          sessionId={mode.sessionId}
+          initialPrompt={mode.initialPrompt}
+          initialSkills={mode.initialSkills}
+          cachedConversation={mode.sessionId ? conversationCacheRef.current.get(mode.sessionId) : undefined}
+          onConversationLoaded={updateConversationCache}
+          onBack={handleBack}
+          onShowFullGraph={handleShowFullGraph}
+          showFullGraph={showFullGraph}
+          onCloseFullGraph={handleCloseFullGraph}
+          focusToolCallId={focusToolCallId}
+          session={session}
+        />
+      )}
     </View>
   );
 }
@@ -144,42 +188,5 @@ export default function MainScreen({ navigation, route, onDisconnect }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  mainContent: {
-    flex: 1,
-    backgroundColor: 'transparent',
-  },
-  overlay: {
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-  },
-  floatingHeader: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 100,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingBottom: 8,
-  },
-  headerLeft: {
-    zIndex: 1,
-  },
-  headerButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  menuIcon: {
-    fontSize: 18,
-  },
-  headerRight: {
-    flexDirection: 'row',
-    gap: 8,
-    zIndex: 1,
   },
 });
