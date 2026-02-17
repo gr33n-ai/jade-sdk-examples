@@ -6,11 +6,12 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { type UseJadeSessionReturn, type ConversationEntry, type MediaInfo } from '@gr33n-ai/jade-sdk-rn-client';
+import { type UseJadeSessionReturn, type ConversationEntry, type MediaInfo, useJadeClient } from '@gr33n-ai/jade-sdk-rn-client';
 import CardStack from './CardStack';
 import ChatCard from './ChatCard';
 import PromptRow from './PromptRow';
@@ -104,6 +105,7 @@ export default function CardStackChat({
   focusToolCallId,
   session,
 }: CardStackChatProps) {
+  const client = useJadeClient();
   const colors = useThemeColors();
   const insets = useSafeAreaInsets();
   const [input, setInput] = useState('');
@@ -111,6 +113,11 @@ export default function CardStackChat({
   const [hasSentInitial, setHasSentInitial] = useState(false);
   const [viewerMedia, setViewerMedia] = useState<{ media: MediaInfo[]; index: number } | null>(null);
   const [mediaIndexMap, setMediaIndexMap] = useState<Record<string, number>>({});
+  const [pendingAttachment, setPendingAttachment] = useState<{
+    localUri: string;
+    cdnUrl?: string;
+    isUploading: boolean;
+  } | null>(null);
 
   const {
     processedConversation,
@@ -196,8 +203,17 @@ export default function CardStackChat({
 
   const handleSend = useCallback(async () => {
     const text = input.trim();
-    if (!text || isStreaming) return;
+    if ((!text && !pendingAttachment?.cdnUrl) || isStreaming) return;
+    if (pendingAttachment?.isUploading) return;
+
+    const userText = text || 'What is this image?';
     setInput('');
+
+    let message = userText;
+    if (pendingAttachment?.cdnUrl) {
+      message = `[Attached image: ${pendingAttachment.cdnUrl}]\n\n${userText}`;
+    }
+    setPendingAttachment(null);
 
     let fullMessage: string;
     if (stackTurns.length > 0) {
@@ -205,7 +221,7 @@ export default function CardStackChat({
       const currentMediaIndex = mediaIndexMap[currentTurn.id] ?? 0;
       console.log(`[Context] card ${currentIndex + 1}/${stackTurns.length}, media ${currentMediaIndex + 1}/${currentTurn.media.length}`);
       const contextMessage = buildMessageContext(
-        text,
+        message,
         currentIndex,
         stackTurns.length,
         currentTurn.displayPrompt,
@@ -214,7 +230,7 @@ export default function CardStackChat({
       );
       fullMessage = HIDDEN_PROMPT_PREFIX + '\n\n' + contextMessage;
     } else {
-      fullMessage = HIDDEN_PROMPT_PREFIX + '\n\n' + text;
+      fullMessage = HIDDEN_PROMPT_PREFIX + '\n\n' + message;
     }
 
     try {
@@ -222,7 +238,7 @@ export default function CardStackChat({
     } catch (err) {
       console.error('Send error:', err);
     }
-  }, [input, isStreaming, stackTurns, currentIndex, mediaIndexMap, sendMessage]);
+  }, [input, isStreaming, stackTurns, currentIndex, mediaIndexMap, sendMessage, pendingAttachment]);
 
   const handleSuggestionTap = useCallback(
     async (suggestion: string) => {
@@ -283,11 +299,35 @@ export default function CardStackChat({
   }, [isStreaming, stackTurns, currentIndex, mediaIndexMap, sendMessage]);
 
   const handleAttachment = useCallback(
-    (_uri: string, _type: 'image' | 'document') => {
-      // Attachment handling placeholder
+    async (uri: string, type: 'image' | 'document') => {
+      if (type !== 'image') {
+        Alert.alert('Unsupported', 'Only image attachments are supported.');
+        return;
+      }
+
+      setPendingAttachment({ localUri: uri, isUploading: true });
+
+      try {
+        const fileName = uri.split('/').pop() || 'image.jpg';
+        const mimeType = fileName.endsWith('.png') ? 'image/png' : 'image/jpeg';
+        const result = await client.upload({ uri, name: fileName, type: mimeType });
+        setPendingAttachment((prev) =>
+          prev?.localUri === uri
+            ? { ...prev, cdnUrl: result.url, isUploading: false }
+            : prev,
+        );
+      } catch (err) {
+        console.error('Upload failed:', err);
+        setPendingAttachment(null);
+        Alert.alert('Upload Failed', 'Could not upload the image. Please try again.');
+      }
     },
-    [],
+    [client],
   );
+
+  const clearAttachment = useCallback(() => {
+    setPendingAttachment(null);
+  }, []);
 
   const handleMediaIndexChange = useCallback(
     (turnId: string, index: number) => {
@@ -372,6 +412,8 @@ export default function CardStackChat({
           onCancel={cancel}
           isStreaming={isStreaming}
           onAttachment={handleAttachment}
+          pendingAttachment={pendingAttachment}
+          onClearAttachment={clearAttachment}
         />
       </View>
 

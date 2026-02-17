@@ -9,11 +9,19 @@ import {
   Platform,
   ActionSheetIOS,
   Alert,
+  Image,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { useThemeColors } from '../utils/theme';
+
+interface PendingAttachment {
+  localUri: string;
+  cdnUrl?: string;
+  isUploading: boolean;
+}
 
 interface InputBarProps {
   value: string;
@@ -23,6 +31,8 @@ interface InputBarProps {
   isStreaming: boolean;
   disabled?: boolean;
   onAttachment?: (uri: string, type: 'image' | 'document') => void;
+  pendingAttachment?: PendingAttachment | null;
+  onClearAttachment?: () => void;
 }
 
 export default function InputBar({
@@ -33,6 +43,8 @@ export default function InputBar({
   isStreaming,
   disabled = false,
   onAttachment,
+  pendingAttachment,
+  onClearAttachment,
 }: InputBarProps) {
   const colors = useThemeColors();
   const insets = useSafeAreaInsets();
@@ -141,15 +153,32 @@ export default function InputBar({
   const handleSendOrCancel = () => {
     if (isStreaming) {
       onCancel();
-    } else if (value.trim()) {
+    } else if (value.trim() || pendingAttachment?.cdnUrl) {
       onSend();
     }
   };
 
-  const canSend = value.trim().length > 0;
+  const canSend = value.trim().length > 0 || !!pendingAttachment?.cdnUrl;
 
   return (
-    <View style={[styles.container, { backgroundColor: 'transparent', paddingBottom: insets.bottom + 8 }]}>
+    <View style={[styles.outerContainer, { paddingBottom: insets.bottom + 8 }]}>
+      {pendingAttachment && (
+        <View style={styles.attachmentPreview}>
+          <View style={styles.attachmentThumb}>
+            <Image source={{ uri: pendingAttachment.localUri }} style={styles.thumbImage} />
+            {pendingAttachment.isUploading && (
+              <View style={styles.thumbOverlay}>
+                <ActivityIndicator size="small" color="#fff" />
+              </View>
+            )}
+            <TouchableOpacity style={styles.thumbRemove} onPress={onClearAttachment}>
+              <Text style={styles.thumbRemoveText}>×</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      <View style={styles.container}>
       <TouchableOpacity
         style={[styles.plusButton, { backgroundColor: '#FFFFFF' }]}
         onPress={handleAttachmentPress}
@@ -190,17 +219,60 @@ export default function InputBar({
           )}
         </TouchableOpacity>
       </View>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  outerContainer: {
+    backgroundColor: 'transparent',
+  },
   container: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
     paddingTop: 8,
     gap: 8,
+  },
+  attachmentPreview: {
+    paddingHorizontal: 68,
+    paddingTop: 8,
+  },
+  attachmentThumb: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+  },
+  thumbImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  thumbOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 8,
+  },
+  thumbRemove: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#ef4444',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  thumbRemoveText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: -1,
   },
   plusButton: {
     width: 44,
